@@ -2,7 +2,7 @@
 
 import requests
 import os
-from flask import Flask
+from flask import Flask, make_response
 from werkzeug.contrib.atom import AtomFeed
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -40,7 +40,7 @@ def get_url(torrent_id):
 
 
 def set_rss_url(torrent_id):
-    return '/static/{}.torrent'.format(torrent_id)
+    return '/torrents/{}.torrent'.format(torrent_id)
 
 
 def get_page(torrent_id):
@@ -54,13 +54,13 @@ def get_title(torrent_id):
     return data.find('div', class_='h11').string
 
 
-def get_file(torrent_id):
-    torrent_file = 'static/{}.torrent'.format(torrent_id)
-    with open(torrent_file, 'wb') as handle:
-        response = session.get(get_url(torrent_id))
+@app.route('/torrents/<path:torrent_id>.torrent')
+def get_torrent(torrent_id):
+    torrent = session.get(get_url(torrent_id))
+    response = make_response(torrent.content)
+    response.headers['Content-Disposition'] = 'attachment; filename={}.torrent'.format(torrent_id)
+    return response
 
-        for block in response.iter_content(1024):
-            handle.write(block)
 
 @app.route("/")
 def rss_feed():
@@ -68,14 +68,13 @@ def rss_feed():
     for torrent in data.find_all('div', class_='listeklink'):
         torrent_id = get_id(torrent.a.get('href'))
         torrent_title = get_title(torrent_id)
-        get_file(torrent_id)
         torrent_url = set_rss_url(torrent_id)
         feed.add(torrent_title,
                  content_type='html',
                  url=torrent_url,
                  updated=datetime.now())
-        print('ADDED: {} at {}\n'.format(torrent_title, torrent_url))
     return feed.get_response()
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0')
