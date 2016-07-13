@@ -27,9 +27,6 @@ headers = {
 session = requests.Session()
 session.post('https://www.partis.si/user/login', data=payload)
 
-response = session.get('https://www.partis.si/brskaj?offset=0&ns=true', headers=headers)
-data = BeautifulSoup(response.text, 'html.parser')
-
 
 def get_id(href):
     return href.split('/')[-1]
@@ -64,6 +61,9 @@ def get_torrent(torrent_id):
 
 @app.route("/")
 def rss_feed():
+    response = session.get('https://www.partis.si/brskaj?offset=0&ns=true', headers=headers)
+    data = BeautifulSoup(response.text, 'html.parser')
+
     feed = AtomFeed('Recent Torrents', feed_url=rss_url, url=rss_url)
     for torrent in data.find_all('div', class_='listeklink'):
         torrent_id = get_id(torrent.a.get('href'))
