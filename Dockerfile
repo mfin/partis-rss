@@ -3,6 +3,10 @@ MAINTAINER Matjaž Finžgar <matjaz@finzgar.net>
 
 WORKDIR /app
 
+RUN apk add --update \
+	gcc \
+	musl-dev
+
 COPY . /app
 RUN pip install -r /app/requirements.txt
 
