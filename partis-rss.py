@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 
-import requests
 import os
 import re
-from datetime import datetime
+import requests
+import gevent
+import arrow
+from gevent import monkey
 from flask import Flask, make_response
 from werkzeug.contrib.atom import AtomFeed
 from bs4 import BeautifulSoup
-from datetime import datetime
+
+monkey.patch_all()
 
 app = Flask(__name__)
 
@@ -27,7 +30,7 @@ headers = {
 }
 
 session = requests.Session()
-session.post('https://www.partis.si/user/login', data=payload)
+session.post('http://www.partis.si/user/login', data=payload)
 
 
 def get_id(href):
@@ -35,7 +38,7 @@ def get_id(href):
 
 
 def get_url(torrent_id):
-    return 'https://www.partis.si/torrent/prenesi/{}'.format(torrent_id)
+    return 'http://www.partis.si/torrent/prenesi/{}'.format(torrent_id)
 
 
 def set_rss_url(torrent_id):
@@ -43,7 +46,7 @@ def set_rss_url(torrent_id):
 
 
 def get_page(torrent_id):
-    return 'https://www.partis.si/torrent/podrobno/{}'.format(torrent_id)
+    return 'http://www.partis.si/torrent/podrobno/{}'.format(torrent_id)
 
 
 def get_torrent_info(torrent_id):
@@ -52,7 +55,17 @@ def get_torrent_info(torrent_id):
     data = BeautifulSoup(response.text, 'html.parser')
     title = data.find('div', class_='h11').string
     date = data.find('table', class_='q4').find(string=re.compile("Dodano")).find_next('td', class_='q3').string
-    return [title, datetime.strptime(date, "%d.%m.%Y ob %H:%M:%S")]
+    return [title, arrow.get(date, 'DD.MM.YYYY ob HH:mm:ss').replace(tzinfo='Europe/Ljubljana')]
+
+
+def torrent_to_rss(torrent, feed):
+    torrent_id = get_id(torrent.a.get('href'))
+    torrent_info = get_torrent_info(torrent_id)
+    torrent_url = set_rss_url(torrent_id)
+    feed.add(torrent_info[0],
+             content_type='html',
+             url=torrent_url,
+             updated=torrent_info[1])
 
 
 @app.route('/torrents/<path:torrent_id>.torrent')
@@ -65,18 +78,15 @@ def get_torrent(torrent_id):
 
 @app.route("/")
 def rss_feed():
-    response = session.get('https://www.partis.si/brskaj?offset=0&ns=true', headers=headers)
+    response = session.get('http://www.partis.si/brskaj?offset=0&ns=true', headers=headers)
     data = BeautifulSoup(response.text, 'html.parser')
 
     feed = AtomFeed('Recent Torrents', feed_url=rss_url, url=rss_url)
-    for torrent in data.find_all('div', class_='listeklink'):
-        torrent_id = get_id(torrent.a.get('href'))
-        torrent_info = get_torrent_info(torrent_id)
-        torrent_url = set_rss_url(torrent_id)
-        feed.add(torrent_info[0],
-                 content_type='html',
-                 url=torrent_url,
-                 updated=torrent_info[1])
+    torrent = data.find_all('div', class_='listeklink')
+
+    inject = [gevent.spawn(torrent_to_rss, _torrent, feed) for _torrent in torrent]
+    gevent.joinall(inject)
+
     return feed.get_response()
 
 
